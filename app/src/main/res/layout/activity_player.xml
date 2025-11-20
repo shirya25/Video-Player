@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <!-- Media3 PlayerView -->
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/playerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_centerInParent="true"
+        android:keepScreenOn="true"
+        app:use_controller="false"/>
+
+    <!-- Subtitle View -->
+    <androidx.media3.ui.SubtitleView
+        android:id="@+id/subtitleView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_above="@id/controlLayout"
+        android:padding="16dp"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:background="@drawable/subtitle_gradient"/>
+
+    <!-- Custom Controls with Modern Design -->
+    <LinearLayout
+        android:id="@+id/controlLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:orientation="vertical"
+        android:background="@drawable/control_gradient"
+        android:padding="16dp">
+
+        <!-- Time + SeekBar -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="12dp">
+
+            <TextView
+                android:id="@+id/txtCurrentTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="00:00"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium"
+                android:minWidth="50dp"
+                android:gravity="center"/>
+
+            <SeekBar
+                android:id="@+id/seekBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:progressTint="#FF6B6B"
+                android:thumbTint="#FF6B6B"
+                android:progressBackgroundTint="#444444"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"/>
+
+            <TextView
+                android:id="@+id/txtTotalTime"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="00:00"
+                android:textColor="#AAAAAA"
+                android:textSize="13sp"
+                android:fontFamily="sans-serif-medium"
+                android:minWidth="50dp"
+                android:gravity="center"/>
+        </LinearLayout>
+
+        <!-- Main Playback Controls -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginBottom="12dp">
+
+            <ImageButton
+                android:id="@+id/btnPrev"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/control_button_bg"
+                android:src="@drawable/ic_skip_previous"
+                android:contentDescription="Previous"
+                android:scaleType="centerInside"
+                android:padding="12dp"
+                android:layout_margin="6dp"/>
+
+            <ImageButton
+                android:id="@+id/btnRewind"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/control_button_bg"
+                android:src="@drawable/ic_replay_10"
+                android:contentDescription="Rewind 10s"
+                android:scaleType="centerInside"
+                android:padding="12dp"
+                android:layout_margin="6dp"/>
+
+            <ImageButton
+                android:id="@+id/btnPlayPause"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:background="@drawable/play_button_bg"
+                android:src="@drawable/ic_play"
+                android:contentDescription="Play/Pause"
+                android:scaleType="centerInside"
+                android:padding="16dp"
+                android:layout_margin="6dp"
+                android:elevation="4dp"/>
+
+            <ImageButton
+                android:id="@+id/btnForward"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/control_button_bg"
+                android:src="@drawable/ic_forward_10"
+                android:contentDescription="Forward 10s"
+                android:scaleType="centerInside"
+                android:padding="12dp"
+                android:layout_margin="6dp"/>
+
+            <ImageButton
+                android:id="@+id/btnNext"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/control_button_bg"
+                android:src="@drawable/ic_skip_next"
+                android:contentDescription="Next"
+                android:scaleType="centerInside"
+                android:padding="12dp"
+                android:layout_margin="6dp"/>
+        </LinearLayout>
+
+        <!-- Additional Controls -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginBottom="8dp">
+
+            <ImageButton
+                android:id="@+id/btnSpeed"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/control_button_bg"
+                android:src="@drawable/ic_speed"
+                android:contentDescription="Playback Speed"
+                android:scaleType="centerInside"
+                android:padding="10dp"
+                android:layout_margin="4dp"/>
+
+            <TextView
+                android:id="@+id/txtSpeed"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1.0x"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:layout_marginEnd="12dp"
+                android:gravity="center_vertical"/>
+
+            <ImageButton
+                android:id="@+id/btnSubtitle"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/control_button_bg"
+                android:src="@drawable/ic_subtitles"
+                android:contentDescription="Toggle Subtitles"
+                android:scaleType="centerInside"
+                android:padding="10dp"
+                android:layout_margin="4dp"/>
+
+            <ImageButton
+                android:id="@+id/btnLoadSubtitle"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/control_button_bg"
+                android:src="@drawable/ic_closed_cc"
+                android:contentDescription="Load Subtitles"
+                android:scaleType="centerInside"
+                android:padding="10dp"
+                android:layout_margin="4dp"/>
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1"/>
+
+            <ImageButton
+                android:id="@+id/btnVolume"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/control_button_bg"
+                android:src="@drawable/ic_volume_up"
+                android:contentDescription="Volume"
+                android:scaleType="centerInside"
+                android:padding="10dp"
+                android:layout_margin="4dp"/>
+        </LinearLayout>
+
+        <!-- Volume Control (Initially Hidden) -->
+        <LinearLayout
+            android:id="@+id/volumeLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:visibility="gone"
+            android:layout_marginTop="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🔊"
+                android:textSize="18sp"
+                android:layout_marginEnd="8dp"/>
+
+            <SeekBar
+                android:id="@+id/volumeSeekBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:progressTint="#4ECDC4"
+                android:thumbTint="#4ECDC4"
+                android:progressBackgroundTint="#444444"/>
+
+            <TextView
+                android:id="@+id/txtVolume"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="100%"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:minWidth="50dp"
+                android:gravity="center"
+                android:layout_marginStart="8dp"/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Video Title Overlay (Top) -->
+    <TextView
+        android:id="@+id/txtVideoTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:text="Video Title"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:padding="16dp"
+        android:background="@drawable/title_gradient"
+        android:maxLines="2"
+        android:ellipsize="end"/>
+
+</RelativeLayout>
