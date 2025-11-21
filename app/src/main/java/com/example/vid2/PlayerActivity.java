@@ -1,10 +1,16 @@
 package com.example.vid2;
 
+import android.app.AlertDialog;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.GestureDetector;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.widget.ImageButton;
 import android.widget.SeekBar;
@@ -13,17 +19,28 @@ import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.mediarouter.app.MediaRouteButton;
 
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.common.Tracks;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.ui.PlayerView;
 import androidx.media3.ui.SubtitleView;
+import androidx.media3.cast.CastPlayer;
+import androidx.media3.cast.SessionAvailabilityListener;
+
+import com.google.android.gms.cast.framework.CastButtonFactory;
+import com.google.android.gms.cast.framework.CastContext;
+import com.google.android.gms.cast.framework.CastSession;
+import com.google.android.gms.cast.framework.SessionManagerListener;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @UnstableApi
@@ -31,13 +48,18 @@ public class PlayerActivity extends AppCompatActivity {
 
     private PlayerView playerView;
     private ExoPlayer exoPlayer;
+    private DefaultTrackSelector trackSelector;
+    private CastPlayer castPlayer;
+    private Player currentPlayer;
+    private CastContext castContext;
 
     private ImageButton btnPlayPause, btnForward, btnRewind, btnNext, btnPrev,
-            btnSpeed, btnSubtitle, btnLoadSubtitle, btnVolume;
+            btnSpeed, btnSubtitle, btnLoadSubtitle, btnVolume, btnAspectRatio, btnAudioTrack;
     private SeekBar seekBar, volumeSeekBar;
     private TextView txtCurrentTime, txtTotalTime, txtSpeed, txtVolume, txtVideoTitle;
     private SubtitleView subtitleView;
-    private View volumeLayout, controlLayout;
+    private View volumeLayout, controlLayout, topRightControls;
+    private MediaRouteButton castButton;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private AudioManager audioManager;
@@ -50,6 +72,55 @@ public class PlayerActivity extends AppCompatActivity {
     private boolean loadSubtitles = true;
     private boolean controlsVisible = true;
     private boolean volumeVisible = false;
+    private boolean isFullScreenMode = false;
+    private boolean isCasting = false;
+
+    // Gesture controls
+    private GestureDetector gestureDetector;
+    private ScaleGestureDetector scaleGestureDetector;
+    private float scaleFactor = 1.0f;
+    private static final float MIN_ZOOM = 1.0f;
+    private static final float MAX_ZOOM = 3.0f;
+
+    private final SessionManagerListener<CastSession> castSessionManagerListener =
+            new SessionManagerListener<CastSession>() {
+                @Override
+                public void onSessionStarted(CastSession session, String sessionId) {
+                    onCastSessionStarted();
+                }
+
+                @Override
+                public void onSessionEnded(CastSession session, int error) {
+                    onCastSessionEnded();
+                }
+
+                @Override
+                public void onSessionResumed(CastSession session, boolean wasSuspended) {
+                    onCastSessionStarted();
+                }
+
+                @Override
+                public void onSessionSuspended(CastSession session, int reason) {
+                    onCastSessionEnded();
+                }
+
+                @Override
+                public void onSessionStarting(CastSession session) {}
+
+                @Override
+                public void onSessionEnding(CastSession session) {}
+
+                @Override
+                public void onSessionResuming(CastSession session, String sessionId) {}
+
+                @Override
+                public void onSessionStartFailed(CastSession session, int error) {
+                    Toast.makeText(PlayerActivity.this, "Cast failed to start", Toast.LENGTH_SHORT).show();
+                }
+
+                @Override
+                public void onSessionResumeFailed(CastSession session, int error) {}
+            };
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -68,6 +139,8 @@ public class PlayerActivity extends AppCompatActivity {
         btnSubtitle      = findViewById(R.id.btnSubtitle);
         btnLoadSubtitle  = findViewById(R.id.btnLoadSubtitle);
         btnVolume        = findViewById(R.id.btnVolume);
+        btnAspectRatio   = findViewById(R.id.btnAspectRatio);
+        btnAudioTrack    = findViewById(R.id.btnAudioTrack);
         seekBar          = findViewById(R.id.seekBar);
         txtCurrentTime   = findViewById(R.id.txtCurrentTime);
         txtTotalTime     = findViewById(R.id.txtTotalTime);
@@ -77,6 +150,7 @@ public class PlayerActivity extends AppCompatActivity {
         volumeSeekBar    = findViewById(R.id.volumeSeekBar);
         volumeLayout     = findViewById(R.id.volumeLayout);
         controlLayout    = findViewById(R.id.controlLayout);
+        topRightControls = findViewById(R.id.topRightControls);
 
         // Get video list
         ArrayList<String> passed = getIntent().getStringArrayListExtra("videoList");
@@ -86,9 +160,45 @@ public class PlayerActivity extends AppCompatActivity {
             Toast.makeText(this, "No videos provided", Toast.LENGTH_LONG).show();
         }
 
-        // Initialize player
-        exoPlayer = new ExoPlayer.Builder(this).build();
+        // Initialize Cast
+        try {
+            castContext = CastContext.getSharedInstance(this);
+            castPlayer = new CastPlayer(castContext);
+            castPlayer.setSessionAvailabilityListener(new SessionAvailabilityListener() {
+                @Override
+                public void onCastSessionAvailable() {
+                    onCastSessionStarted();
+                }
+
+                @Override
+                public void onCastSessionUnavailable() {
+                    onCastSessionEnded();
+                }
+            });
+        } catch (Exception e) {
+            Toast.makeText(this, "Cast not available", Toast.LENGTH_SHORT).show();
+            e.printStackTrace();
+        }
+
+        // Initialize player with better codec support
+        trackSelector = new DefaultTrackSelector(this);
+        exoPlayer = new ExoPlayer.Builder(this)
+                .setTrackSelector(trackSelector)
+                .setMediaSourceFactory(
+                        new androidx.media3.exoplayer.source.DefaultMediaSourceFactory(this)
+                                .setDataSourceFactory(
+                                        new androidx.media3.datasource.DefaultDataSourceFactory(this)
+                                )
+                )
+                .build();
         playerView.setPlayer(exoPlayer);
+        currentPlayer = exoPlayer;
+
+        // Register cast session listener
+        if (castContext != null) {
+            castContext.getSessionManager().addSessionManagerListener(
+                    castSessionManagerListener, CastSession.class);
+        }
 
         // Set video title
         if (currentIndex < videoList.size()) {
@@ -100,15 +210,28 @@ public class PlayerActivity extends AppCompatActivity {
         exoPlayer.addListener(new Player.Listener() {
             @Override
             public void onPlayerError(PlaybackException error) {
-                Toast.makeText(PlayerActivity.this,
-                        "Playback error: " + error.getMessage(), Toast.LENGTH_LONG).show();
+                String errorMsg = "Playback error: ";
+                if (error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED) {
+                    errorMsg += "Format not supported on this device";
+                } else if (error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED) {
+                    errorMsg += "Video format not supported";
+                } else {
+                    errorMsg += error.getMessage();
+                }
+                Toast.makeText(PlayerActivity.this, errorMsg, Toast.LENGTH_LONG).show();
             }
 
             @Override
             public void onPlaybackStateChanged(int state) {
                 if (state == Player.STATE_READY) {
                     updateTotalDuration();
+                    updatePlayPauseIcon();
                 }
+            }
+
+            @Override
+            public void onIsPlayingChanged(boolean isPlaying) {
+                updatePlayPauseIcon();
             }
 
             @Override
@@ -124,7 +247,6 @@ public class PlayerActivity extends AppCompatActivity {
         });
 
         // Setup initial state
-        updatePlayPauseIcon();
         subtitleView.setVisibility(subtitlesEnabled ? View.VISIBLE : View.GONE);
 
         // Setup playlist and start
@@ -201,12 +323,32 @@ public class PlayerActivity extends AppCompatActivity {
             volumeLayout.setVisibility(volumeVisible ? View.VISIBLE : View.GONE);
         });
 
+        // Aspect Ratio toggle
+        btnAspectRatio.setOnClickListener(v -> {
+            isFullScreenMode = !isFullScreenMode;
+            if (isFullScreenMode) {
+                // Fill screen - zoom to fill
+                playerView.setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM);
+                btnAspectRatio.setImageResource(R.drawable.ic_fullscreen_exit);
+                Toast.makeText(this, "Fill Screen", Toast.LENGTH_SHORT).show();
+            } else {
+                // Fit screen - show entire video
+                playerView.setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT);
+                btnAspectRatio.setImageResource(R.drawable.ic_fullscreen);
+                Toast.makeText(this, "Fit Screen", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // Audio Track Selection
+        btnAudioTrack.setOnClickListener(v -> showAudioTrackDialog());
+
         // SeekBar for video progress
+        seekBar.setMax(1000); // Set max to 1000 for better precision
         seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
                 if (fromUser && exoPlayer.getDuration() > 0) {
-                    long posMs = progress * exoPlayer.getDuration() / 1000L;
+                    long posMs = (long) progress * exoPlayer.getDuration() / 1000L;
                     txtCurrentTime.setText(formatMs(posMs));
                 }
             }
@@ -219,7 +361,7 @@ public class PlayerActivity extends AppCompatActivity {
             @Override
             public void onStopTrackingTouch(SeekBar bar) {
                 if (exoPlayer.getDuration() > 0) {
-                    long posMs = bar.getProgress() * exoPlayer.getDuration() / 1000L;
+                    long posMs = (long) bar.getProgress() * exoPlayer.getDuration() / 1000L;
                     exoPlayer.seekTo(posMs);
                 }
                 startProgressUpdater();
@@ -252,6 +394,125 @@ public class PlayerActivity extends AppCompatActivity {
 
         // Touch to show/hide controls
         playerView.setOnClickListener(v -> toggleControls());
+
+        // Setup gesture controls
+        setupGestureControls();
+    }
+
+    private void setupGestureControls() {
+        // Gesture detector for swipe
+        gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
+            @Override
+            public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+                if (e1 == null || e2 == null) return false;
+
+                float deltaX = e2.getX() - e1.getX();
+                float deltaY = e2.getY() - e1.getY();
+
+                // Check if horizontal swipe (seeking)
+                if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                    // Horizontal swipe - seek video
+                    float screenWidth = playerView.getWidth();
+                    float seekPercentage = deltaX / screenWidth;
+                    long duration = exoPlayer.getDuration();
+
+                    if (duration > 0) {
+                        long seekAmount = (long) (seekPercentage * duration * 0.1); // 10% per full swipe
+                        long newPosition = exoPlayer.getCurrentPosition() + seekAmount;
+                        newPosition = Math.max(0, Math.min(newPosition, duration));
+                        exoPlayer.seekTo(newPosition);
+
+                        // Show seek feedback
+                        String feedback = seekAmount > 0 ? "+%ds" : "%ds";
+                        Toast.makeText(PlayerActivity.this,
+                                String.format(feedback, seekAmount / 1000),
+                                Toast.LENGTH_SHORT).show();
+                    }
+                    return true;
+                }
+
+                // Vertical swipe on left side - brightness (you can implement this)
+                // Vertical swipe on right side - volume
+                if (Math.abs(deltaY) > Math.abs(deltaX)) {
+                    float screenWidth = playerView.getWidth();
+                    if (e1.getX() > screenWidth / 2) {
+                        // Right side - volume control
+                        adjustVolume(-deltaY);
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            @Override
+            public boolean onDoubleTap(MotionEvent e) {
+                // Double tap to play/pause
+                if (exoPlayer.isPlaying()) {
+                    exoPlayer.pause();
+                } else {
+                    exoPlayer.play();
+                }
+                updatePlayPauseIcon();
+                return true;
+            }
+        });
+
+        // Scale gesture detector for pinch to zoom
+        scaleGestureDetector = new ScaleGestureDetector(this, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            @Override
+            public boolean onScale(ScaleGestureDetector detector) {
+                scaleFactor *= detector.getScaleFactor();
+                scaleFactor = Math.max(MIN_ZOOM, Math.min(scaleFactor, MAX_ZOOM));
+
+                // Apply zoom
+                playerView.setScaleX(scaleFactor);
+                playerView.setScaleY(scaleFactor);
+
+                return true;
+            }
+
+            @Override
+            public void onScaleEnd(ScaleGestureDetector detector) {
+                // Show current zoom level
+                Toast.makeText(PlayerActivity.this,
+                        String.format("Zoom: %.1fx", scaleFactor),
+                        Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        // Override touch events on playerView
+        playerView.setOnTouchListener((v, event) -> {
+            // Handle scale gestures first (pinch to zoom)
+            scaleGestureDetector.onTouchEvent(event);
+
+            // Then handle other gestures (swipe, tap)
+            gestureDetector.onTouchEvent(event);
+
+            return true;
+        });
+    }
+
+    private void adjustVolume(float delta) {
+        if (audioManager == null) return;
+
+        int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+        int currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+
+        // Convert delta to volume change (swipe full height = max volume change)
+        float screenHeight = playerView.getHeight();
+        int volumeChange = (int) ((delta / screenHeight) * maxVolume);
+
+        int newVolume = currentVolume + volumeChange;
+        newVolume = Math.max(0, Math.min(newVolume, maxVolume));
+
+        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0);
+        volumeSeekBar.setProgress(newVolume);
+        updateVolumeText(newVolume, maxVolume);
+
+        // Show volume feedback
+        int percentage = (int) ((newVolume / (float) maxVolume) * 100);
+        Toast.makeText(this, "Volume: " + percentage + "%", Toast.LENGTH_SHORT).show();
     }
 
     private void updatePlayPauseIcon() {
@@ -265,7 +526,14 @@ public class PlayerActivity extends AppCompatActivity {
     private void toggleControls() {
         controlsVisible = !controlsVisible;
         controlLayout.setVisibility(controlsVisible ? View.VISIBLE : View.GONE);
+        topRightControls.setVisibility(controlsVisible ? View.VISIBLE : View.GONE);
         txtVideoTitle.setVisibility(controlsVisible ? View.VISIBLE : View.GONE);
+
+        // Hide volume bar when controls are hidden
+        if (!controlsVisible) {
+            volumeVisible = false;
+            volumeLayout.setVisibility(View.GONE);
+        }
     }
 
     private void updateVolumeText(int current, int max) {
@@ -363,9 +631,219 @@ public class PlayerActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         handler.removeCallbacksAndMessages(null);
+
+        // Unregister cast listener
+        if (castContext != null) {
+            castContext.getSessionManager().removeSessionManagerListener(
+                    castSessionManagerListener, CastSession.class);
+        }
+
         if (exoPlayer != null) {
             exoPlayer.release();
             exoPlayer = null;
+        }
+
+        if (castPlayer != null) {
+            castPlayer.setSessionAvailabilityListener(null);
+            castPlayer.release();
+            castPlayer = null;
+        }
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        super.onCreateOptionsMenu(menu);
+        getMenuInflater().inflate(R.menu.cast_menu, menu);
+        MenuItem mediaRouteMenuItem = menu.findItem(R.id.media_route_menu_item);
+        if (mediaRouteMenuItem != null) {
+            CastButtonFactory.setUpMediaRouteButton(getApplicationContext(), menu, R.id.media_route_menu_item);
+        }
+        return true;
+    }
+
+    private void onCastSessionStarted() {
+        isCasting = true;
+        Toast.makeText(this, "Casting started", Toast.LENGTH_SHORT).show();
+
+        // Save current playback position
+        long currentPosition = exoPlayer.getCurrentPosition();
+        boolean wasPlaying = exoPlayer.isPlaying();
+
+        // Switch to cast player
+        exoPlayer.pause();
+        currentPlayer = castPlayer;
+
+        // Transfer media to cast player
+        setupPlaylistForCast();
+        castPlayer.seekTo(currentIndex, currentPosition);
+        castPlayer.prepare();
+        if (wasPlaying) {
+            castPlayer.play();
+        }
+
+        // Hide local video view
+        playerView.setVisibility(View.GONE);
+        txtVideoTitle.setText(txtVideoTitle.getText() + " (Casting)");
+    }
+
+    private void onCastSessionEnded() {
+        if (!isCasting) return;
+
+        isCasting = false;
+        Toast.makeText(this, "Casting ended", Toast.LENGTH_SHORT).show();
+
+        // Save cast playback position
+        long currentPosition = castPlayer.getCurrentPosition();
+        boolean wasPlaying = castPlayer.isPlaying();
+
+        // Switch back to local player
+        castPlayer.pause();
+        currentPlayer = exoPlayer;
+
+        // Resume local playback
+        exoPlayer.seekTo(currentIndex, currentPosition);
+        if (wasPlaying) {
+            exoPlayer.play();
+        }
+
+        // Show local video view
+        playerView.setVisibility(View.VISIBLE);
+
+        // Update title
+        if (currentIndex < videoList.size()) {
+            File videoFile = new File(videoList.get(currentIndex));
+            txtVideoTitle.setText(videoFile.getName());
+        }
+    }
+
+    private void setupPlaylistForCast() {
+        castPlayer.clearMediaItems();
+        for (String path : videoList) {
+            MediaItem mediaItem = buildMediaItemForCast(path);
+            castPlayer.addMediaItem(mediaItem);
+        }
+    }
+
+    private MediaItem buildMediaItemForCast(String videoPath) {
+        File videoFile = new File(videoPath);
+
+        // For casting, we need to provide a URL that the cast device can access
+        // Local files won't work directly - you'd need to set up a local server
+        // For now, we'll use the file URI (this works for some scenarios)
+
+        MediaItem.Builder builder = new MediaItem.Builder()
+                .setUri(Uri.fromFile(videoFile))
+                .setMediaMetadata(
+                        new androidx.media3.common.MediaMetadata.Builder()
+                                .setTitle(videoFile.getName())
+                                .build()
+                );
+
+        return builder.build();
+    }
+
+    private void showAudioTrackDialog() {
+        if (exoPlayer == null) return;
+
+        Tracks currentTracks = exoPlayer.getCurrentTracks();
+        List<String> audioTrackNames = new ArrayList<>();
+        List<Tracks.Group> audioTrackGroups = new ArrayList<>();
+        List<Integer> audioTrackIndices = new ArrayList<>();
+        int currentSelectedIndex = -1;
+
+        // Get all audio tracks
+        int trackCounter = 0;
+        for (Tracks.Group trackGroup : currentTracks.getGroups()) {
+            if (trackGroup.getType() == androidx.media3.common.C.TRACK_TYPE_AUDIO) {
+                for (int i = 0; i < trackGroup.length; i++) {
+                    androidx.media3.common.Format format = trackGroup.getTrackFormat(i);
+
+                    // Build track name
+                    String trackName = "Audio Track " + (trackCounter + 1);
+                    if (format.language != null && !format.language.isEmpty()) {
+                        trackName = format.language.toUpperCase();
+                        // Add label if available
+                        if (format.label != null && !format.label.isEmpty()) {
+                            trackName += " - " + format.label;
+                        }
+                    } else if (format.label != null && !format.label.isEmpty()) {
+                        trackName = format.label;
+                    }
+
+                    // Add codec info
+                    if (format.sampleMimeType != null) {
+                        String codec = format.sampleMimeType.replace("audio/", "").toUpperCase();
+                        trackName += " (" + codec + ")";
+                    }
+
+                    audioTrackNames.add(trackName);
+                    audioTrackGroups.add(trackGroup);
+                    audioTrackIndices.add(i);
+
+                    // Check if this track is currently selected
+                    if (trackGroup.isTrackSelected(i)) {
+                        currentSelectedIndex = trackCounter;
+                    }
+
+                    trackCounter++;
+                }
+            }
+        }
+
+        if (audioTrackNames.isEmpty()) {
+            Toast.makeText(this, "No audio tracks available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (audioTrackNames.size() == 1) {
+            Toast.makeText(this, "Only one audio track available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // Create dialog
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Select Audio Track");
+
+        builder.setSingleChoiceItems(
+                audioTrackNames.toArray(new String[0]),
+                currentSelectedIndex,
+                (dialog, which) -> {
+                    // Set the selected audio track
+                    setAudioTrack(audioTrackGroups.get(which), audioTrackIndices.get(which));
+                    dialog.dismiss();
+                    Toast.makeText(this, "Audio: " + audioTrackNames.get(which), Toast.LENGTH_SHORT).show();
+                }
+        );
+
+        builder.setNegativeButton("Cancel", (dialog, which) -> dialog.dismiss());
+        builder.show();
+    }
+
+    private void setAudioTrack(Tracks.Group trackGroup, int trackIndex) {
+        if (exoPlayer == null || trackSelector == null) return;
+
+        try {
+            // Build new parameters with the selected audio track
+            androidx.media3.common.TrackSelectionParameters.Builder parametersBuilder =
+                    trackSelector.getParameters().buildUpon();
+
+            // Clear any existing audio overrides
+            parametersBuilder.clearOverridesOfType(androidx.media3.common.C.TRACK_TYPE_AUDIO);
+
+            // Set the new audio track override
+            parametersBuilder.addOverride(
+                    new androidx.media3.common.TrackSelectionOverride(
+                            trackGroup.getMediaTrackGroup(),
+                            trackIndex
+                    )
+            );
+
+            // Apply the parameters
+            trackSelector.setParameters(parametersBuilder.build());
+
+        } catch (Exception e) {
+            Toast.makeText(this, "Error switching audio track", Toast.LENGTH_SHORT).show();
+            e.printStackTrace();
         }
     }
 }

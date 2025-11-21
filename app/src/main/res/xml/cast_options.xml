@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<cast-options>
+    <string name="app_id">@string/cast_app_id</string>
+</cast-options>
