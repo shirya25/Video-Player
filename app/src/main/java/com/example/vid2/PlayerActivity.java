@@ -392,15 +392,13 @@ public class PlayerActivity extends AppCompatActivity {
             });
         }
 
-        // Touch to show/hide controls
-        playerView.setOnClickListener(v -> toggleControls());
 
         // Setup gesture controls
         setupGestureControls();
     }
 
     private void setupGestureControls() {
-        // Gesture detector for swipe
+        // Gesture detector for swipe and single/double tap
         gestureDetector = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
             @Override
             public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
@@ -431,13 +429,12 @@ public class PlayerActivity extends AppCompatActivity {
                     return true;
                 }
 
-                // Vertical swipe on left side - brightness (you can implement this)
                 // Vertical swipe on right side - volume
                 if (Math.abs(deltaY) > Math.abs(deltaX)) {
                     float screenWidth = playerView.getWidth();
                     if (e1.getX() > screenWidth / 2) {
                         // Right side - volume control
-                        adjustVolume(-deltaY);
+                        adjustVolume(distanceY * -1);
                         return true;
                     }
                 }
@@ -446,8 +443,15 @@ public class PlayerActivity extends AppCompatActivity {
             }
 
             @Override
+            public boolean onSingleTapUp(MotionEvent e) {
+                // SINGLE TAP: Toggle controls visibility
+                toggleControls();
+                return true;
+            }
+
+            @Override
             public boolean onDoubleTap(MotionEvent e) {
-                // Double tap to play/pause
+                // DOUBLE TAP: Toggle play/pause
                 if (exoPlayer.isPlaying()) {
                     exoPlayer.pause();
                 } else {
@@ -483,12 +487,19 @@ public class PlayerActivity extends AppCompatActivity {
 
         // Override touch events on playerView
         playerView.setOnTouchListener((v, event) -> {
-            // Handle scale gestures first (pinch to zoom)
+            // 1. Handle scale gestures first (pinch to zoom)
             scaleGestureDetector.onTouchEvent(event);
 
-            // Then handle other gestures (swipe, tap)
-            gestureDetector.onTouchEvent(event);
+            // 2. Then handle other gestures (swipe, tap)
+            boolean handledByGesture = gestureDetector.onTouchEvent(event);
 
+            // 3. Crucial for Accessibility/Lint: Call performClick on ACTION_UP
+            // We call performClick() to ensure accessibility services (like TalkBack) are aware of the click action.
+            if (event.getAction() == MotionEvent.ACTION_UP && handledByGesture) {
+                v.performClick();
+            }
+
+            // Return true to consume the event for the gesture detectors
             return true;
         });
     }
@@ -820,29 +831,33 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
     private void setAudioTrack(Tracks.Group trackGroup, int trackIndex) {
-        if (exoPlayer == null || trackSelector == null) return;
+        if (exoPlayer == null) return;
 
         try {
-            // Build new parameters with the selected audio track
+            // 1. Get the current TrackSelectionParameters and start building.
             androidx.media3.common.TrackSelectionParameters.Builder parametersBuilder =
-                    trackSelector.getParameters().buildUpon();
+                    exoPlayer.getTrackSelectionParameters().buildUpon();
 
-            // Clear any existing audio overrides
+            // 2. Clear any existing selection/override for the AUDIO track type.
+            // This is the key change to avoid the error. C.TRACK_TYPE_AUDIO is an int.
             parametersBuilder.clearOverridesOfType(androidx.media3.common.C.TRACK_TYPE_AUDIO);
 
-            // Set the new audio track override
-            parametersBuilder.addOverride(
+            // 3. Create the TrackSelectionOverride for the specific track in the group.
+            androidx.media3.common.TrackSelectionOverride override =
                     new androidx.media3.common.TrackSelectionOverride(
                             trackGroup.getMediaTrackGroup(),
-                            trackIndex
-                    )
-            );
+                            java.util.Collections.singletonList(trackIndex)
+                    );
 
-            // Apply the parameters
-            trackSelector.setParameters(parametersBuilder.build());
+            // 4. Apply the override to the parameters.
+            // setOverrideForType is the standard way to apply a track selection in Media3.
+            parametersBuilder.setOverrideForType(override);
+
+            // 5. Apply the new parameters to the player.
+            exoPlayer.setTrackSelectionParameters(parametersBuilder.build());
 
         } catch (Exception e) {
-            Toast.makeText(this, "Error switching audio track", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Failed to set audio track: " + e.getMessage(), Toast.LENGTH_LONG).show();
             e.printStackTrace();
         }
     }
